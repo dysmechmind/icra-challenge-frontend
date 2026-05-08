@@ -58,8 +58,11 @@ type ChatResponse = {
 };
 
 type MeResponse = {
+  user_id?: number;
   email: string;
   balance: number;
+  auth_method?: string;
+  active_key_id?: number | null;
   limits?: {
     rpm?: number;
     daily_spend_usd?: number;
@@ -124,10 +127,30 @@ type ModelRow = {
   is_active: boolean;
 };
 
+type AuthResponse = {
+  success?: boolean;
+  session_token?: string;
+  session_expires_in?: number;
+  bootstrap_api_key?: string;
+  bootstrap_key_mask?: string;
+  has_active_api_key?: boolean;
+  user?: {
+    user_id: number;
+    email: string;
+    balance: number;
+    created_at: number;
+  };
+  detail?: string;
+};
+
 export default function Home() {
   const apiBase = defaultApiBase.replace(/\/$/, "");
   const [adminSecret, setAdminSecret] = useState("dev-admin-secret");
   const [email, setEmail] = useState("demo@example.com");
+  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const [authEmail, setAuthEmail] = useState("demo@example.com");
+  const [authPassword, setAuthPassword] = useState("password123");
+  const [sessionToken, setSessionToken] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("gpt-4o-mini");
   const [message, setMessage] = useState("给我一个跨境 AI 网关的 MVP 迭代计划");
@@ -160,7 +183,48 @@ export default function Home() {
 
   useEffect(() => {
     void refreshPublicModels();
+    const storedSession = window.localStorage.getItem("token-router-session") ?? "";
+    const storedApiKey = window.localStorage.getItem("token-router-api-key") ?? "";
+    if (storedSession) {
+      setSessionToken(storedSession);
+      void refreshAccount(storedSession, storedApiKey);
+      void refreshKeys(storedSession, storedApiKey);
+    }
+    if (storedApiKey) {
+      setApiKey(storedApiKey);
+    }
   }, []);
+
+  useEffect(() => {
+    if (apiKey) {
+      window.localStorage.setItem("token-router-api-key", apiKey);
+      return;
+    }
+    window.localStorage.removeItem("token-router-api-key");
+  }, [apiKey]);
+
+  function buildConsoleHeaders(overrideSessionToken?: string, overrideApiKey?: string) {
+    const nextSessionToken = overrideSessionToken ?? sessionToken;
+    const nextApiKey = overrideApiKey ?? apiKey;
+    const headers: Record<string, string> = {};
+    if (nextSessionToken) {
+      headers["x-session-token"] = nextSessionToken;
+    } else if (nextApiKey) {
+      headers.Authorization = `Bearer ${nextApiKey}`;
+    }
+    return headers;
+  }
+
+  function clearConsoleState() {
+    setSessionToken("");
+    setMe(null);
+    setUsageRows([]);
+    setOrderRows([]);
+    setLedgerRows([]);
+    setKeyRows([]);
+    setActiveKeyId(null);
+    window.localStorage.removeItem("token-router-session");
+  }
 
   async function refreshPublicModels() {
     try {
@@ -183,6 +247,68 @@ export default function Home() {
       setTimeout(() => setCopied(false), 1600);
     } catch {
       setMeta("复制失败，请手动复制网关地址");
+    }
+  }
+
+  async function submitAuth(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setMeta("");
+    setResult("");
+    try {
+      const endpoint = authMode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
+      const res = await fetch(`${apiBase}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: authEmail,
+          password: authPassword,
+        }),
+      });
+      const data = (await res.json()) as AuthResponse;
+      if (!res.ok || !data.session_token) {
+        throw new Error(data.detail ?? `${authMode === "register" ? "注册" : "登录"}失败`);
+      }
+
+      setSessionToken(data.session_token);
+      setEmail(authEmail);
+      window.localStorage.setItem("token-router-session", data.session_token);
+      if (data.bootstrap_api_key) {
+        setApiKey(data.bootstrap_api_key);
+        setResult(`默认 API Key\n${data.bootstrap_api_key}`);
+      }
+      setMeta(
+        authMode === "register"
+          ? `注册成功，已创建默认 Key${data.bootstrap_key_mask ? `: ${data.bootstrap_key_mask}` : ""}`
+          : "登录成功"
+      );
+      await Promise.all([refreshAccount(data.session_token, data.bootstrap_api_key), refreshKeys(data.session_token, data.bootstrap_api_key)]);
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : `${authMode === "register" ? "注册" : "登录"}失败`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    if (!sessionToken) {
+      clearConsoleState();
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetch(`${apiBase}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: {
+          "x-session-token": sessionToken,
+        },
+      });
+      clearConsoleState();
+      setMeta("已退出登录");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -247,18 +373,19 @@ export default function Home() {
     }
   }
 
-  async function refreshAccount() {
-    if (!apiKey) {
-      setMeta("请先创建或输入 API Key");
+  async function refreshAccount(overrideSessionToken?: string, overrideApiKey?: string) {
+    const headers = buildConsoleHeaders(overrideSessionToken, overrideApiKey);
+    if (Object.keys(headers).length === 0) {
+      setMeta("请先登录或输入 API Key");
       return;
     }
     setBusy(true);
     try {
       const [meRes, usageRes, orderRes, ledgerRes] = await Promise.all([
-        fetch(`${apiBase}/api/v1/me`, { headers: { Authorization: `Bearer ${apiKey}` } }),
-        fetch(`${apiBase}/api/v1/usage`, { headers: { Authorization: `Bearer ${apiKey}` } }),
-        fetch(`${apiBase}/api/v1/orders`, { headers: { Authorization: `Bearer ${apiKey}` } }),
-        fetch(`${apiBase}/api/v1/billing/ledger`, { headers: { Authorization: `Bearer ${apiKey}` } }),
+        fetch(`${apiBase}/api/v1/me`, { headers }),
+        fetch(`${apiBase}/api/v1/usage`, { headers }),
+        fetch(`${apiBase}/api/v1/orders`, { headers }),
+        fetch(`${apiBase}/api/v1/billing/ledger`, { headers }),
       ]);
       const meData = (await meRes.json()) as MeResponse & { detail?: string };
       const usageData = (await usageRes.json()) as { data?: UsageRow[]; detail?: string };
@@ -290,8 +417,9 @@ export default function Home() {
 
   async function createRechargeOrder(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!apiKey) {
-      setMeta("请先输入 API Key");
+    const headers = buildConsoleHeaders();
+    if (Object.keys(headers).length === 0) {
+      setMeta("请先登录或输入 API Key");
       return;
     }
     setBusy(true);
@@ -300,7 +428,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+          ...headers,
         },
         body: JSON.stringify({
           amount: Number(rechargeAmount),
@@ -360,7 +488,7 @@ export default function Home() {
       }
       setMeta(`订单 #${orderId} 已审核入账，余额=$${data.new_balance ?? 0}`);
       await loadAdminOrders();
-      if (apiKey) {
+      if (sessionToken || apiKey) {
         await refreshAccount();
       }
     } catch (err) {
@@ -370,15 +498,16 @@ export default function Home() {
     }
   }
 
-  async function refreshKeys() {
-    if (!apiKey) {
-      setMeta("请先输入 API Key");
+  async function refreshKeys(overrideSessionToken?: string, overrideApiKey?: string) {
+    const headers = buildConsoleHeaders(overrideSessionToken, overrideApiKey);
+    if (Object.keys(headers).length === 0) {
+      setMeta("请先登录或输入 API Key");
       return;
     }
     setBusy(true);
     try {
       const res = await fetch(`${apiBase}/api/v1/keys`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers,
       });
       const data = (await res.json()) as KeyListResponse & { detail?: string };
       if (!res.ok) {
@@ -396,8 +525,9 @@ export default function Home() {
 
   async function createAdditionalKey(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!apiKey) {
-      setMeta("请先输入 API Key");
+    const headers = buildConsoleHeaders();
+    if (Object.keys(headers).length === 0) {
+      setMeta("请先登录或输入 API Key");
       return;
     }
     setBusy(true);
@@ -406,7 +536,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+          ...headers,
         },
         body: JSON.stringify({ label: newKeyLabel }),
       });
@@ -427,15 +557,16 @@ export default function Home() {
   }
 
   async function deactivateKey(keyId: number) {
-    if (!apiKey) {
-      setMeta("请先输入 API Key");
+    const headers = buildConsoleHeaders();
+    if (Object.keys(headers).length === 0) {
+      setMeta("请先登录或输入 API Key");
       return;
     }
     setBusy(true);
     try {
       const res = await fetch(`${apiBase}/api/v1/keys/${keyId}/deactivate`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers,
       });
       const data = (await res.json()) as { detail?: string };
       if (!res.ok) {
@@ -490,7 +621,7 @@ export default function Home() {
         throw new Error(data.detail ?? "保存管理员设置失败");
       }
       setMeta(`管理员设置已保存: rpm=${data.rpm_limit}, daily=$${data.daily_spend_limit}`);
-      if (apiKey) {
+      if (sessionToken || apiKey) {
         await refreshAccount();
       }
     } catch (err) {
@@ -578,7 +709,7 @@ export default function Home() {
       <header className="site-nav">
         <div className="brand-lockup">
           <span className="brand-mark" />
-          <span className="brand-name">LuckyAPI</span>
+          <span className="brand-name">token-router</span>
         </div>
         <nav className="nav-links">
           <a href="#top">首页</a>
@@ -588,11 +719,17 @@ export default function Home() {
           <a href="#about">关于</a>
         </nav>
         <div className="nav-actions">
-          <a className="nav-ghost" href="#console">
-            登录
-          </a>
-          <a className="nav-primary" href="#console">
-            注册
+          {sessionToken ? (
+            <button className="nav-ghost" onClick={logout} type="button">
+              退出登录
+            </button>
+          ) : (
+            <a className="nav-ghost" href="#console" onClick={() => setAuthMode("login")}>
+              登录
+            </a>
+          )}
+          <a className="nav-primary" href="#console" onClick={() => setAuthMode("register")}>
+            {sessionToken ? "账户中心" : "注册"}
           </a>
         </div>
       </header>
@@ -616,11 +753,11 @@ export default function Home() {
             </div>
 
             <div className="hero-actions">
-              <a className="cta-primary" href="#console">
-                开始使用
+              <a className="cta-primary" href="#console" onClick={() => setAuthMode(sessionToken ? "login" : "register")}>
+                {sessionToken ? "进入控制台" : "开始使用"}
               </a>
               <button className="cta-secondary" onClick={refreshPublicModels} type="button">
-                获取额度
+                刷新模型
               </button>
             </div>
 
@@ -715,8 +852,41 @@ export default function Home() {
           </div>
 
           <div className="console-grid">
+            <form className="panel panel-feature" onSubmit={submitAuth}>
+              <h3>{sessionToken ? "账户会话" : authMode === "register" ? "注册 token-router" : "登录 token-router"}</h3>
+              <label>
+                Email
+                <input onChange={(e) => setAuthEmail(e.target.value)} value={authEmail} />
+              </label>
+              <label>
+                Password
+                <input onChange={(e) => setAuthPassword(e.target.value)} type="password" value={authPassword} />
+              </label>
+              <div className="inline-actions">
+                <button disabled={busy} type="submit">
+                  {busy ? "处理中..." : authMode === "register" ? "注册并创建默认 Key" : "登录"}
+                </button>
+                <button disabled={busy || !sessionToken} onClick={logout} type="button">
+                  退出登录
+                </button>
+              </div>
+              <p className="meta">
+                {sessionToken
+                  ? `已登录: ${me?.email ?? authEmail} | 鉴权方式: ${me?.auth_method ?? "session"}`
+                  : "注册后会自动签发 session，并创建一个默认 API Key。"}
+              </p>
+              <div className="inline-actions">
+                <button disabled={busy || authMode === "login"} onClick={() => setAuthMode("login")} type="button">
+                  切到登录
+                </button>
+                <button disabled={busy || authMode === "register"} onClick={() => setAuthMode("register")} type="button">
+                  切到注册
+                </button>
+              </div>
+            </form>
+
             <form className="panel panel-feature" onSubmit={createKey}>
-              <h3>创建测试 API Key</h3>
+              <h3>管理员创建测试 API Key</h3>
               <label>
                 Admin Secret
                 <input onChange={(e) => setAdminSecret(e.target.value)} value={adminSecret} />
@@ -762,13 +932,14 @@ export default function Home() {
             <div className="panel panel-wide">
               <div className="panel-head">
                 <h3>账户状态与用量</h3>
-                <button disabled={busy || !apiKey} onClick={refreshAccount} type="button">
+                <button disabled={busy || (!sessionToken && !apiKey)} onClick={() => void refreshAccount()} type="button">
                   {busy ? "处理中..." : "刷新账户数据"}
                 </button>
               </div>
               <div className="stats-grid">
                 <p>邮箱: {me?.email ?? "-"}</p>
                 <p>余额: ${me?.balance ?? 0}</p>
+                <p>当前鉴权: {me?.auth_method ?? (sessionToken ? "session" : apiKey ? "api_key" : "-")}</p>
                 <p>每分钟限额: {me?.limits?.rpm ?? "-"}</p>
                 <p>日消费上限: ${me?.limits?.daily_spend_usd ?? "-"}</p>
                 <p>今日已消费: ${me?.limits?.today_spend_usd ?? 0}</p>
@@ -820,7 +991,7 @@ export default function Home() {
                 Note
                 <input onChange={(e) => setRechargeNote(e.target.value)} value={rechargeNote} />
               </label>
-              <button disabled={busy || !apiKey} type="submit">
+              <button disabled={busy || (!sessionToken && !apiKey)} type="submit">
                 {busy ? "处理中..." : "提交充值单"}
               </button>
             </form>
@@ -888,7 +1059,7 @@ export default function Home() {
             <form className="panel panel-wide" onSubmit={createAdditionalKey}>
               <div className="panel-head">
                 <h3>API Key 管理</h3>
-                <button disabled={busy || !apiKey} onClick={refreshKeys} type="button">
+                <button disabled={busy || (!sessionToken && !apiKey)} onClick={() => void refreshKeys()} type="button">
                   {busy ? "处理中..." : "刷新 Key 列表"}
                 </button>
               </div>
@@ -896,7 +1067,7 @@ export default function Home() {
                 New Key Label
                 <input onChange={(e) => setNewKeyLabel(e.target.value)} placeholder="server-key" value={newKeyLabel} />
               </label>
-              <button disabled={busy || !apiKey} type="submit">
+              <button disabled={busy || (!sessionToken && !apiKey)} type="submit">
                 {busy ? "处理中..." : "创建附加 Key"}
               </button>
               <div className="table-wrap">

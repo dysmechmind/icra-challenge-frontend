@@ -1,10 +1,11 @@
-# Frontend Service (Gateway Console)
+# token-router Frontend Service
 
-Next.js console for your cross-border model business MVP.
+token-router is a Next.js console for your cross-border model gateway MVP.
 
 Core functions on the homepage:
 
 - Explain dual-market positioning (CN users and global users)
+- Register and log in with a session-based console account
 - Create test API key via backend admin endpoint
 - Send a chat completion request and display usage/cost feedback
 - View account balance, limits, and usage history

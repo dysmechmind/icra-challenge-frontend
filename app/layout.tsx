@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LuckyAPI | 全平台 AI 接入网关",
+  title: "token-router | 全平台 AI 接入网关",
   description: "统一接入海外与国内模型，提供路由、计费、风控与运营后台。",
 };
 
