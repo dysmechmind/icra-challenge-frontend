@@ -7,6 +7,9 @@ Core functions on the homepage:
 - Explain dual-market positioning (CN users and global users)
 - Create test API key via backend admin endpoint
 - Send a chat completion request and display usage/cost feedback
+- View account balance, limits, and usage history
+- Create additional API keys and deactivate old ones
+- Read and update admin risk-control settings
 
 ## Prerequisites
 

@@ -198,6 +198,12 @@ button:disabled {
   overflow-x: auto;
 }
 
+.inline-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -214,6 +220,11 @@ td {
 thead th {
   color: #1f2937;
   font-weight: 700;
+}
+
+td button {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
 }
 
 @media (max-width: 860px) {

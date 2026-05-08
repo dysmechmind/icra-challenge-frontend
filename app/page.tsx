@@ -40,6 +40,26 @@ type UsageRow = {
   created_at: number;
 };
 
+type KeyRow = {
+  id: number;
+  key_mask: string;
+  label?: string | null;
+  created_at: number;
+  last_used_at?: number | null;
+  is_active: number;
+};
+
+type KeyListResponse = {
+  data: KeyRow[];
+  active_key_id: number;
+};
+
+type AdminSettingsResponse = {
+  rpm_limit: number;
+  daily_spend_limit: number;
+  detail?: string;
+};
+
 export default function Home() {
   const [adminSecret, setAdminSecret] = useState("dev-admin-secret");
   const [email, setEmail] = useState("demo@example.com");
@@ -51,6 +71,11 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [usageRows, setUsageRows] = useState<UsageRow[]>([]);
+  const [keyRows, setKeyRows] = useState<KeyRow[]>([]);
+  const [activeKeyId, setActiveKeyId] = useState<number | null>(null);
+  const [newKeyLabel, setNewKeyLabel] = useState("server-key");
+  const [adminRpmLimit, setAdminRpmLimit] = useState("20");
+  const [adminDailyLimit, setAdminDailyLimit] = useState("50");
 
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
 
@@ -154,6 +179,148 @@ export default function Home() {
       setMeta("账户与用量已刷新");
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshKeys() {
+    if (!apiKey) {
+      setMeta("请先输入 API Key");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/keys`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const data = (await res.json()) as KeyListResponse & { detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "加载 Key 列表失败");
+      }
+
+      setKeyRows(data.data ?? []);
+      setActiveKeyId(data.active_key_id ?? null);
+      setMeta("API Key 列表已刷新");
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "加载 Key 列表失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createAdditionalKey(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!apiKey) {
+      setMeta("请先输入 API Key");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/keys`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ label: newKeyLabel }),
+      });
+      const data = (await res.json()) as {
+        api_key?: string;
+        key_mask?: string;
+        detail?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "创建附加 Key 失败");
+      }
+
+      setMeta(`已创建新 Key: ${data.key_mask}`);
+      if (data.api_key) {
+        setResult(`新 API Key\n${data.api_key}`);
+      }
+      await refreshKeys();
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "创建附加 Key 失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deactivateKey(keyId: number) {
+    if (!apiKey) {
+      setMeta("请先输入 API Key");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/keys/${keyId}/deactivate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const data = (await res.json()) as { detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "停用 Key 失败");
+      }
+
+      setMeta(`已停用 Key #${keyId}`);
+      await refreshKeys();
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "停用 Key 失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadAdminSettings() {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/settings`, {
+        headers: { "x-admin-secret": adminSecret },
+      });
+      const data = (await res.json()) as AdminSettingsResponse;
+      if (!res.ok) {
+        throw new Error(data.detail ?? "加载管理员设置失败");
+      }
+
+      setAdminRpmLimit(String(data.rpm_limit));
+      setAdminDailyLimit(String(data.daily_spend_limit));
+      setMeta("管理员设置已加载");
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "加载管理员设置失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAdminSettings(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/settings`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          rpm_limit: Number(adminRpmLimit),
+          daily_spend_limit: Number(adminDailyLimit),
+        }),
+      });
+      const data = (await res.json()) as AdminSettingsResponse;
+      if (!res.ok) {
+        throw new Error(data.detail ?? "保存管理员设置失败");
+      }
+
+      setMeta(`管理员设置已保存: rpm=${data.rpm_limit}, daily=$${data.daily_spend_limit}`);
+      if (apiKey) {
+        await refreshAccount();
+      }
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "保存管理员设置失败");
     } finally {
       setBusy(false);
     }
@@ -271,6 +438,80 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        <form className="panel" onSubmit={createAdditionalKey}>
+          <h3>4) API Key 管理</h3>
+          <div className="inline-actions">
+            <button disabled={busy || !apiKey} type="button" onClick={refreshKeys}>
+              {busy ? "处理中..." : "刷新 Key 列表"}
+            </button>
+          </div>
+          <label>
+            New Key Label
+            <input value={newKeyLabel} onChange={(e) => setNewKeyLabel(e.target.value)} placeholder="server-key" />
+          </label>
+          <button disabled={busy || !apiKey} type="submit">
+            {busy ? "处理中..." : "创建附加 Key"}
+          </button>
+          <div className="usage">
+            {keyRows.length === 0 ? (
+              <p className="meta">暂无 Key 记录</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Mask</th>
+                    <th>Label</th>
+                    <th>Last Used</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {keyRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.id}</td>
+                      <td>{row.key_mask}</td>
+                      <td>{row.label ?? "-"}</td>
+                      <td>{row.last_used_at ? new Date(row.last_used_at * 1000).toLocaleString() : "-"}</td>
+                      <td>{row.is_active ? (row.id === activeKeyId ? "active/current" : "active") : "inactive"}</td>
+                      <td>
+                        <button
+                          disabled={busy || !row.is_active || row.id === activeKeyId}
+                          type="button"
+                          onClick={() => deactivateKey(row.id)}
+                        >
+                          停用
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </form>
+
+        <form className="panel" onSubmit={saveAdminSettings}>
+          <h3>5) 管理员风控配置</h3>
+          <div className="inline-actions">
+            <button disabled={busy} type="button" onClick={loadAdminSettings}>
+              {busy ? "处理中..." : "读取当前配置"}
+            </button>
+          </div>
+          <label>
+            RPM Limit
+            <input value={adminRpmLimit} onChange={(e) => setAdminRpmLimit(e.target.value)} />
+          </label>
+          <label>
+            Daily Spend Limit (USD)
+            <input value={adminDailyLimit} onChange={(e) => setAdminDailyLimit(e.target.value)} />
+          </label>
+          <button disabled={busy} type="submit">
+            {busy ? "处理中..." : "保存管理员配置"}
+          </button>
+        </form>
 
         <div className="panel output">
           <h3>Result</h3>
