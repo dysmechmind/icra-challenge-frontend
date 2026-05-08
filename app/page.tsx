@@ -18,8 +18,26 @@ type ChatResponse = {
   gateway?: {
     cost?: number;
     remaining_balance?: number;
+    provider_used?: string;
   };
   detail?: string;
+};
+
+type MeResponse = {
+  email: string;
+  balance: number;
+  limits?: {
+    rpm?: number;
+    daily_spend_usd?: number;
+    today_spend_usd?: number;
+  };
+};
+
+type UsageRow = {
+  model: string;
+  total_tokens: number;
+  cost: number;
+  created_at: number;
 };
 
 export default function Home() {
@@ -31,6 +49,8 @@ export default function Home() {
   const [result, setResult] = useState("");
   const [meta, setMeta] = useState("");
   const [busy, setBusy] = useState(false);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [usageRows, setUsageRows] = useState<UsageRow[]>([]);
 
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
 
@@ -90,12 +110,50 @@ export default function Home() {
 
       setResult(data.choices?.[0]?.message?.content ?? "(empty response)");
       setMeta(
-        `tokens=${data.usage?.total_tokens ?? 0} | cost=$${data.gateway?.cost ?? 0} | balance=$${
-          data.gateway?.remaining_balance ?? 0
+        `provider=${data.gateway?.provider_used ?? "unknown"} | tokens=${
+          data.usage?.total_tokens ?? 0
+        } | cost=$${data.gateway?.cost ?? 0} | balance=$${data.gateway?.remaining_balance ?? 0
         }`
       );
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "Chat failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshAccount() {
+    if (!apiKey) {
+      setMeta("请先创建或输入 API Key");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const [meRes, usageRes] = await Promise.all([
+        fetch(`${apiBase}/api/v1/me`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
+        fetch(`${apiBase}/api/v1/usage`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
+      ]);
+
+      const meData = (await meRes.json()) as MeResponse & { detail?: string };
+      const usageData = (await usageRes.json()) as { data?: UsageRow[]; detail?: string };
+
+      if (!meRes.ok) {
+        throw new Error(meData.detail ?? "加载账户信息失败");
+      }
+      if (!usageRes.ok) {
+        throw new Error(usageData.detail ?? "加载用量失败");
+      }
+
+      setMe(meData);
+      setUsageRows(usageData.data ?? []);
+      setMeta("账户与用量已刷新");
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "加载失败");
     } finally {
       setBusy(false);
     }
@@ -173,6 +231,46 @@ export default function Home() {
             {busy ? "处理中..." : "发送请求"}
           </button>
         </form>
+
+        <div className="panel">
+          <h3>3) 账户状态与用量</h3>
+          <button disabled={busy || !apiKey} type="button" onClick={refreshAccount}>
+            {busy ? "处理中..." : "刷新账户数据"}
+          </button>
+          <div className="stats">
+            <p>邮箱: {me?.email ?? "-"}</p>
+            <p>余额: ${me?.balance ?? 0}</p>
+            <p>每分钟限额: {me?.limits?.rpm ?? "-"}</p>
+            <p>日消费上限: ${me?.limits?.daily_spend_usd ?? "-"}</p>
+            <p>今日已消费: ${me?.limits?.today_spend_usd ?? 0}</p>
+          </div>
+          <div className="usage">
+            {usageRows.length === 0 ? (
+              <p className="meta">暂无调用记录</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usageRows.slice(0, 8).map((row, idx) => (
+                    <tr key={`${row.created_at}-${idx}`}>
+                      <td>{row.model}</td>
+                      <td>{row.total_tokens}</td>
+                      <td>${row.cost}</td>
+                      <td>{new Date(row.created_at * 1000).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
 
         <div className="panel output">
           <h3>Result</h3>
