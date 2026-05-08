@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cross-Border LLM Gateway",
-  description: "Gateway for domestic and global users to access model services with unified billing.",
+  title: "LuckyAPI | 全平台 AI 接入网关",
+  description: "统一接入海外与国内模型，提供路由、计费、风控与运营后台。",
 };
 
 export default function RootLayout({
