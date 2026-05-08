@@ -31,6 +31,9 @@ type MeResponse = {
     daily_spend_usd?: number;
     today_spend_usd?: number;
   };
+  billing?: {
+    pending_recharge_usd?: number;
+  };
 };
 
 type UsageRow = {
@@ -60,6 +63,28 @@ type AdminSettingsResponse = {
   detail?: string;
 };
 
+type RechargeOrderRow = {
+  id: number;
+  amount: number;
+  channel: string;
+  status: string;
+  note?: string | null;
+  payment_reference?: string | null;
+  operator_note?: string | null;
+  created_at: number;
+  reviewed_at?: number | null;
+  email?: string;
+};
+
+type LedgerRow = {
+  entry_type: string;
+  amount: number;
+  balance_after: number;
+  reference_type?: string | null;
+  reference_id?: number | null;
+  created_at: number;
+};
+
 export default function Home() {
   const [adminSecret, setAdminSecret] = useState("dev-admin-secret");
   const [email, setEmail] = useState("demo@example.com");
@@ -76,6 +101,12 @@ export default function Home() {
   const [newKeyLabel, setNewKeyLabel] = useState("server-key");
   const [adminRpmLimit, setAdminRpmLimit] = useState("20");
   const [adminDailyLimit, setAdminDailyLimit] = useState("50");
+  const [rechargeAmount, setRechargeAmount] = useState("100");
+  const [rechargeChannel, setRechargeChannel] = useState("manual-review");
+  const [rechargeNote, setRechargeNote] = useState("first top-up");
+  const [orderRows, setOrderRows] = useState<RechargeOrderRow[]>([]);
+  const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([]);
+  const [adminOrderRows, setAdminOrderRows] = useState<RechargeOrderRow[]>([]);
 
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
 
@@ -155,17 +186,25 @@ export default function Home() {
 
     setBusy(true);
     try {
-      const [meRes, usageRes] = await Promise.all([
+      const [meRes, usageRes, orderRes, ledgerRes] = await Promise.all([
         fetch(`${apiBase}/api/v1/me`, {
           headers: { Authorization: `Bearer ${apiKey}` },
         }),
         fetch(`${apiBase}/api/v1/usage`, {
           headers: { Authorization: `Bearer ${apiKey}` },
         }),
+        fetch(`${apiBase}/api/v1/orders`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
+        fetch(`${apiBase}/api/v1/billing/ledger`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
       ]);
 
       const meData = (await meRes.json()) as MeResponse & { detail?: string };
       const usageData = (await usageRes.json()) as { data?: UsageRow[]; detail?: string };
+      const orderData = (await orderRes.json()) as { data?: RechargeOrderRow[]; detail?: string };
+      const ledgerData = (await ledgerRes.json()) as { data?: LedgerRow[]; detail?: string };
 
       if (!meRes.ok) {
         throw new Error(meData.detail ?? "加载账户信息失败");
@@ -173,12 +212,106 @@ export default function Home() {
       if (!usageRes.ok) {
         throw new Error(usageData.detail ?? "加载用量失败");
       }
+      if (!orderRes.ok) {
+        throw new Error(orderData.detail ?? "加载订单失败");
+      }
+      if (!ledgerRes.ok) {
+        throw new Error(ledgerData.detail ?? "加载流水失败");
+      }
 
       setMe(meData);
       setUsageRows(usageData.data ?? []);
+      setOrderRows(orderData.data ?? []);
+      setLedgerRows(ledgerData.data ?? []);
       setMeta("账户与用量已刷新");
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createRechargeOrder(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!apiKey) {
+      setMeta("请先输入 API Key");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/orders/recharge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          amount: Number(rechargeAmount),
+          channel: rechargeChannel,
+          note: rechargeNote,
+        }),
+      });
+      const data = (await res.json()) as { order_id?: number; status?: string; detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "创建充值单失败");
+      }
+
+      setMeta(`充值单已创建: #${data.order_id} (${data.status})`);
+      await refreshAccount();
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "创建充值单失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadAdminOrders() {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/orders`, {
+        headers: { "x-admin-secret": adminSecret },
+      });
+      const data = (await res.json()) as { data?: RechargeOrderRow[]; detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "加载充值单失败");
+      }
+
+      setAdminOrderRows(data.data ?? []);
+      setMeta("管理员订单列表已加载");
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "加载充值单失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveOrder(orderId: number) {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/orders/${orderId}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          operator_note: "approved from console",
+          payment_reference: `manual-${orderId}`,
+        }),
+      });
+      const data = (await res.json()) as { success?: boolean; new_balance?: number; detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "审核充值单失败");
+      }
+
+      setMeta(`订单 #${orderId} 已审核入账，余额=$${data.new_balance ?? 0}`);
+      await loadAdminOrders();
+      if (apiKey) {
+        await refreshAccount();
+      }
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "审核充值单失败");
     } finally {
       setBusy(false);
     }
@@ -410,6 +543,7 @@ export default function Home() {
             <p>每分钟限额: {me?.limits?.rpm ?? "-"}</p>
             <p>日消费上限: ${me?.limits?.daily_spend_usd ?? "-"}</p>
             <p>今日已消费: ${me?.limits?.today_spend_usd ?? 0}</p>
+            <p>待审核充值: ${me?.billing?.pending_recharge_usd ?? 0}</p>
           </div>
           <div className="usage">
             {usageRows.length === 0 ? (
@@ -439,8 +573,91 @@ export default function Home() {
           </div>
         </div>
 
+        <form className="panel" onSubmit={createRechargeOrder}>
+          <h3>4) 创建充值订单</h3>
+          <label>
+            Amount (USD)
+            <input value={rechargeAmount} onChange={(e) => setRechargeAmount(e.target.value)} />
+          </label>
+          <label>
+            Channel
+            <select value={rechargeChannel} onChange={(e) => setRechargeChannel(e.target.value)}>
+              <option value="manual-review">manual-review</option>
+              <option value="bank-transfer">bank-transfer</option>
+              <option value="crypto-usdt">crypto-usdt</option>
+            </select>
+          </label>
+          <label>
+            Note
+            <input value={rechargeNote} onChange={(e) => setRechargeNote(e.target.value)} />
+          </label>
+          <button disabled={busy || !apiKey} type="submit">
+            {busy ? "处理中..." : "提交充值单"}
+          </button>
+          <div className="usage">
+            {orderRows.length === 0 ? (
+              <p className="meta">暂无充值订单</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Amount</th>
+                    <th>Channel</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderRows.slice(0, 8).map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.id}</td>
+                      <td>${row.amount}</td>
+                      <td>{row.channel}</td>
+                      <td>{row.status}</td>
+                      <td>{new Date(row.created_at * 1000).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </form>
+
+        <div className="panel">
+          <h3>5) 余额流水</h3>
+          <div className="usage">
+            {ledgerRows.length === 0 ? (
+              <p className="meta">暂无余额流水</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Balance After</th>
+                    <th>Reference</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledgerRows.slice(0, 8).map((row, idx) => (
+                    <tr key={`${row.created_at}-${idx}`}>
+                      <td>{row.entry_type}</td>
+                      <td>${row.amount}</td>
+                      <td>${row.balance_after}</td>
+                      <td>{row.reference_type ?? "-"}#{row.reference_id ?? "-"}</td>
+                      <td>{new Date(row.created_at * 1000).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
         <form className="panel" onSubmit={createAdditionalKey}>
-          <h3>4) API Key 管理</h3>
+          <h3>6) API Key 管理</h3>
           <div className="inline-actions">
             <button disabled={busy || !apiKey} type="button" onClick={refreshKeys}>
               {busy ? "处理中..." : "刷新 Key 列表"}
@@ -494,10 +711,13 @@ export default function Home() {
         </form>
 
         <form className="panel" onSubmit={saveAdminSettings}>
-          <h3>5) 管理员风控配置</h3>
+          <h3>7) 管理员风控配置</h3>
           <div className="inline-actions">
             <button disabled={busy} type="button" onClick={loadAdminSettings}>
               {busy ? "处理中..." : "读取当前配置"}
+            </button>
+            <button disabled={busy} type="button" onClick={loadAdminOrders}>
+              {busy ? "处理中..." : "加载充值订单"}
             </button>
           </div>
           <label>
@@ -511,6 +731,42 @@ export default function Home() {
           <button disabled={busy} type="submit">
             {busy ? "处理中..." : "保存管理员配置"}
           </button>
+          <div className="usage">
+            {adminOrderRows.length === 0 ? (
+              <p className="meta">暂无管理员订单视图</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminOrderRows.slice(0, 10).map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.id}</td>
+                      <td>{row.email ?? "-"}</td>
+                      <td>${row.amount}</td>
+                      <td>{row.status}</td>
+                      <td>
+                        <button
+                          disabled={busy || row.status !== "pending"}
+                          type="button"
+                          onClick={() => approveOrder(row.id)}
+                        >
+                          审核入账
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </form>
 
         <div className="panel output">
