@@ -453,6 +453,12 @@ a {
   word-break: break-word;
 }
 
+.console-login-lock {
+  text-align: center;
+  justify-items: center;
+  gap: 0.9rem;
+}
+
 .panel-head {
   display: flex;
   align-items: center;
@@ -526,6 +532,42 @@ button:disabled {
   color: var(--ink-soft);
 }
 
+.auth-shell {
+  min-height: 100vh;
+  width: min(960px, 92vw);
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 2rem 0;
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 18px 45px rgba(81, 90, 107, 0.08);
+  backdrop-filter: blur(12px);
+  padding: 1.4rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.auth-card-wide {
+  width: min(960px, 100%);
+}
+
+.auth-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.auth-dual-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -576,7 +618,8 @@ th {
   .guide-grid,
   .market-grid,
   .admin-form-grid,
-  .table-dual {
+  .table-dual,
+  .auth-dual-grid {
     grid-template-columns: 1fr;
   }
 
