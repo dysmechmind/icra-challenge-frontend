@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const defaultApiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -85,6 +85,16 @@ type LedgerRow = {
   created_at: number;
 };
 
+type ModelRow = {
+  id: string;
+  upstream_model: string;
+  region: string;
+  provider_chain: string[];
+  input_price_per_1k: number;
+  output_price_per_1k: number;
+  is_active: boolean;
+};
+
 export default function Home() {
   const [adminSecret, setAdminSecret] = useState("dev-admin-secret");
   const [email, setEmail] = useState("demo@example.com");
@@ -107,8 +117,35 @@ export default function Home() {
   const [orderRows, setOrderRows] = useState<RechargeOrderRow[]>([]);
   const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([]);
   const [adminOrderRows, setAdminOrderRows] = useState<RechargeOrderRow[]>([]);
+  const [availableModels, setAvailableModels] = useState<ModelRow[]>([]);
+  const [adminModels, setAdminModels] = useState<ModelRow[]>([]);
+  const [adminModelId, setAdminModelId] = useState("gpt-4o-mini");
+  const [adminUpstreamModel, setAdminUpstreamModel] = useState("gpt-4o-mini");
+  const [adminRegion, setAdminRegion] = useState("global");
+  const [adminProviderChain, setAdminProviderChain] = useState("openai,mock");
+  const [adminInputPrice, setAdminInputPrice] = useState("0.001");
+  const [adminOutputPrice, setAdminOutputPrice] = useState("0.002");
+  const [adminModelActive, setAdminModelActive] = useState(true);
 
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
+
+  useEffect(() => {
+    void refreshPublicModels();
+  }, []);
+
+  async function refreshPublicModels() {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/models`);
+      const data = (await res.json()) as { data?: ModelRow[] };
+      const models = data.data ?? [];
+      setAvailableModels(models);
+      if (models.length > 0 && !models.some((item) => item.id === model)) {
+        setModel(models[0].id);
+      }
+    } catch {
+      // Keep the last known local options if the catalog cannot be loaded.
+    }
+  }
 
   async function createKey(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -281,6 +318,78 @@ export default function Home() {
       setMeta("管理员订单列表已加载");
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "加载充值单失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadAdminModels() {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/models`, {
+        headers: { "x-admin-secret": adminSecret },
+      });
+      const data = (await res.json()) as { data?: ModelRow[]; detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "加载模型配置失败");
+      }
+
+      const models = data.data ?? [];
+      setAdminModels(models);
+      if (models.length > 0) {
+        applyModelForm(models[0]);
+      }
+      setMeta("模型配置已加载");
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "加载模型配置失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applyModelForm(modelRow: ModelRow) {
+    setAdminModelId(modelRow.id);
+    setAdminUpstreamModel(modelRow.upstream_model);
+    setAdminRegion(modelRow.region);
+    setAdminProviderChain(modelRow.provider_chain.join(","));
+    setAdminInputPrice(String(modelRow.input_price_per_1k));
+    setAdminOutputPrice(String(modelRow.output_price_per_1k));
+    setAdminModelActive(modelRow.is_active);
+  }
+
+  async function saveAdminModel(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const providerChain = adminProviderChain
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const res = await fetch(`${apiBase}/api/v1/admin/models`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          model_id: adminModelId,
+          upstream_model: adminUpstreamModel,
+          region: adminRegion,
+          provider_chain: providerChain,
+          input_price_per_1k: Number(adminInputPrice),
+          output_price_per_1k: Number(adminOutputPrice),
+          is_active: adminModelActive,
+        }),
+      });
+      const data = (await res.json()) as { model_id?: string; detail?: string };
+      if (!res.ok) {
+        throw new Error(data.detail ?? "保存模型配置失败");
+      }
+
+      setMeta(`模型配置已保存: ${data.model_id}`);
+      await Promise.all([loadAdminModels(), refreshPublicModels()]);
+    } catch (err) {
+      setMeta(err instanceof Error ? err.message : "保存模型配置失败");
     } finally {
       setBusy(false);
     }
@@ -519,8 +628,15 @@ export default function Home() {
           <label>
             Model
             <select value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="gpt-4o-mini">gpt-4o-mini (global)</option>
-              <option value="deepseek-chat">deepseek-chat (cn)</option>
+              {availableModels.length === 0 ? (
+                <option value={model}>{model}</option>
+              ) : (
+                availableModels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.id} ({item.region})
+                  </option>
+                ))
+              )}
             </select>
           </label>
           <label>
@@ -719,6 +835,9 @@ export default function Home() {
             <button disabled={busy} type="button" onClick={loadAdminOrders}>
               {busy ? "处理中..." : "加载充值订单"}
             </button>
+            <button disabled={busy} type="button" onClick={loadAdminModels}>
+              {busy ? "处理中..." : "加载模型配置"}
+            </button>
           </div>
           <label>
             RPM Limit
@@ -759,6 +878,77 @@ export default function Home() {
                           onClick={() => approveOrder(row.id)}
                         >
                           审核入账
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </form>
+
+        <form className="panel" onSubmit={saveAdminModel}>
+          <h3>8) 模型与价格管理</h3>
+          <label>
+            Model ID
+            <input value={adminModelId} onChange={(e) => setAdminModelId(e.target.value)} placeholder="gpt-4o-mini" />
+          </label>
+          <label>
+            Upstream Model
+            <input value={adminUpstreamModel} onChange={(e) => setAdminUpstreamModel(e.target.value)} />
+          </label>
+          <label>
+            Region
+            <input value={adminRegion} onChange={(e) => setAdminRegion(e.target.value)} placeholder="global / cn" />
+          </label>
+          <label>
+            Provider Chain
+            <input value={adminProviderChain} onChange={(e) => setAdminProviderChain(e.target.value)} placeholder="openai,mock" />
+          </label>
+          <label>
+            Input Price / 1K
+            <input value={adminInputPrice} onChange={(e) => setAdminInputPrice(e.target.value)} />
+          </label>
+          <label>
+            Output Price / 1K
+            <input value={adminOutputPrice} onChange={(e) => setAdminOutputPrice(e.target.value)} />
+          </label>
+          <label className="checkbox-row">
+            <input checked={adminModelActive} onChange={(e) => setAdminModelActive(e.target.checked)} type="checkbox" />
+            <span>Model Active</span>
+          </label>
+          <button disabled={busy} type="submit">
+            {busy ? "处理中..." : "保存模型配置"}
+          </button>
+          <div className="usage">
+            {adminModels.length === 0 ? (
+              <p className="meta">暂无模型配置</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Region</th>
+                    <th>Providers</th>
+                    <th>In/1K</th>
+                    <th>Out/1K</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminModels.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.id}</td>
+                      <td>{item.region}</td>
+                      <td>{item.provider_chain.join(",")}</td>
+                      <td>${item.input_price_per_1k}</td>
+                      <td>${item.output_price_per_1k}</td>
+                      <td>{item.is_active ? "active" : "inactive"}</td>
+                      <td>
+                        <button disabled={busy} type="button" onClick={() => applyModelForm(item)}>
+                          编辑
                         </button>
                       </td>
                     </tr>

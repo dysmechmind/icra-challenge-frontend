@@ -12,6 +12,7 @@ Core functions on the homepage:
 - Create additional API keys and deactivate old ones
 - Read and update admin risk-control settings
 - Review and approve pending recharge orders from the console
+- Manage model catalog, pricing, activation state, and provider chain from the console
 
 ## Prerequisites
 

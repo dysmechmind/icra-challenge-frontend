@@ -139,6 +139,17 @@ label {
   font-weight: 600;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
 input,
 select,
 textarea,
