@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
 const defaultApiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -12,7 +11,6 @@ type AuthResponse = {
 };
 
 export default function LoginPage() {
-  const router = useRouter();
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
   const [email, setEmail] = useState("root");
   const [password, setPassword] = useState("12345678");
@@ -35,7 +33,7 @@ export default function LoginPage() {
       }
       window.localStorage.setItem("token-router-session", data.session_token);
       setMeta("登录成功，正在跳转控制台...");
-        router.push("/console");
+      window.location.href = "/console";
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "登录失败");
     } finally {

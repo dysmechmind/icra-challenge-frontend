@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
 const defaultApiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -14,7 +13,6 @@ type RegisterResponse = {
 };
 
 export default function RegisterPage() {
-  const router = useRouter();
   const apiBase = useMemo(() => defaultApiBase.replace(/\/$/, ""), []);
   const [email, setEmail] = useState("new-user@example.com");
   const [password, setPassword] = useState("password123");
@@ -43,7 +41,7 @@ export default function RegisterPage() {
       setMeta(
         `注册成功${data.bootstrap_key_mask ? `，默认 Key: ${data.bootstrap_key_mask}` : ""}，正在跳转控制台...`
       );
-        router.push("/console");
+      window.location.href = "/console";
     } catch (err) {
       setMeta(err instanceof Error ? err.message : "注册失败");
     } finally {
