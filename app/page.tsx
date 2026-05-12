@@ -4,63 +4,194 @@ import { useEffect, useState } from "react";
 
 const defaultApiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-const quickGuides = [
-  {
-    title: "新手接入指南",
-    description: "为首次接入的团队准备的端到端说明，包含获取额度、创建 Key 和切换模型地址。",
-    link: "/console",
-  },
-  {
-    title: "Claude Code",
-    description: "面向终端开发工作流的接入示例，适合需要稳定海外模型访问的工程场景。",
-    link: "/console",
-  },
-  {
-    title: "OpenClaw",
-    description: "适合 24/7 自动化代理与任务流，支持多上游切换和更细颗粒度的成本控制。",
-    link: "/console",
-  },
-  {
-    title: "Codex CLI",
-    description: "为命令行智能编程和代码理解场景预设的网关入口，便于快速替换现有 base URL。",
-    link: "/console",
-  },
-];
+type Lang = "en" | "zh";
 
-const marketHighlights = [
-  {
-    title: "国内用户",
-    description: "稳定访问海外模型，统一鉴权、故障切换、限流和账单管理。",
-    points: ["OpenAI 兼容接口", "失败自动回退", "用量与成本实时可见"],
+const i18n = {
+  en: {
+    nav: { models: "Models", pricing: "Pricing", playground: "Playground", routing: "Routing", billing: "Billing", docs: "Docs", login: "Sign In", start: "Get Started", dashboard: "Dashboard" },
+    hero: {
+      kicker: "UNIFIED AI MODEL GATEWAY",
+      title: "One API. Every Model.",
+      titleHighlight: "Intelligent Routing.",
+      subtitle: "Access 100+ LLMs through a single OpenAI-compatible endpoint. Route requests by latency, cost, or quality. Pay only for what you use.",
+      copy: "Copy",
+      copied: "Copied",
+      cta1: "Start Building — Free",
+      cta2: "View Documentation",
+      metric1Label: "Models Online",
+      metric2Label: "Uptime SLA",
+      metric3Label: "Avg Latency Overhead",
+    },
+    features: {
+      kicker: "WHY TOKEN ROUTER",
+      title: "Infrastructure that scales with you",
+      subtitle: "From prototype to production, one gateway handles model access, failover, cost control, and observability.",
+      cards: [
+        { title: "OpenAI-Compatible API", desc: "Drop-in replacement. Change your base URL, keep your SDK. Works with Python, Node.js, Go, Rust, and any HTTP client." },
+        { title: "Smart Routing Engine", desc: "Route by latency, cost, quality, or custom weights. Circuit breaker auto-recovers failed providers within seconds." },
+        { title: "Unified Billing", desc: "One bill across all providers. Per-token cost tracking, budget alerts, team-level spend controls, and detailed ledger." },
+        { title: "Multi-Provider Failover", desc: "If OpenAI goes down, traffic shifts to Azure or domestic alternatives automatically. Zero downtime for your users." },
+        { title: "Real-Time Observability", desc: "Live dashboard showing request volume, latency percentiles, provider health, and circuit breaker states." },
+        { title: "Enterprise-Ready Security", desc: "API key management, rate limiting, balance pre-checks, audit logs, and role-based access control." },
+      ],
+    },
+    code: {
+      kicker: "INTEGRATION",
+      title: "Three lines to switch",
+      subtitle: "Keep your existing OpenAI SDK. Just change the base URL and API key.",
+    },
+    models: {
+      kicker: "MODEL CATALOG",
+      title: "Access top models from one endpoint",
+      subtitle: "GPT-4o, Claude, Gemini, DeepSeek, Qwen, and more — all through the same interface.",
+      viewAll: "View All Models →",
+    },
+    routing: {
+      kicker: "ROUTING STRATEGIES",
+      title: "From calling models to orchestrating intelligence",
+      cards: [
+        { title: "Latency-Optimized", desc: "Prioritize response time for real-time applications. Auto-fallback on timeout." },
+        { title: "Cost-Optimized", desc: "Minimize spend per request. Route to the cheapest capable model automatically." },
+        { title: "Quality-First", desc: "Use the highest-quality model for critical tasks, cheaper alternatives for bulk." },
+        { title: "Failover & Recovery", desc: "Circuit breaker pattern with automatic health checks and provider re-enablement." },
+      ],
+    },
+    pricing: {
+      kicker: "PRICING",
+      title: "Simple, transparent, usage-based",
+      subtitle: "No markup on model costs. Pay a flat platform fee plus pass-through token pricing.",
+      cards: [
+        { name: "Free", price: "$0", period: "", subtitle: "For exploration", features: ["Pay-per-use tokens", "Basic routing", "Community support", "2 models"] },
+        { name: "Pro", price: "$49", period: "/mo", subtitle: "For teams", features: ["Priority routing", "Budget alerts", "Team billing", "All models", "Email support"] },
+        { name: "Scale", price: "$299", period: "/mo", subtitle: "For production", features: ["Multi-region failover", "Custom routing rules", "Dedicated support", "SLA guarantee", "Audit logs"] },
+        { name: "Enterprise", price: "Custom", period: "", subtitle: "For organizations", features: ["Private deployment", "Compliance & audit", "SSO & RBAC", "Custom SLA", "Dedicated engineer"] },
+      ],
+    },
+    cta: {
+      title: "Ready to unify your AI infrastructure?",
+      subtitle: "Start routing in under 5 minutes. No credit card required.",
+      btn1: "Create Free Account",
+      btn2: "Talk to Sales",
+    },
+    footer: {
+      product: "Product",
+      resources: "Resources",
+      company: "Company",
+      docs: "Documentation",
+      status: "System Status",
+      changelog: "Changelog",
+      about: "About",
+      contact: "Contact",
+      terms: "Terms",
+      privacy: "Privacy",
+      copyright: "© 2024 TokenRouter. All rights reserved.",
+    },
   },
-  {
-    title: "海外用户",
-    description: "用更低价格调用中文与国产模型，保留一致的 API 体验和计费方式。",
-    points: ["国内模型池", "区域路由策略", "模型价格在线管理"],
+  zh: {
+    nav: { models: "模型", pricing: "定价", playground: "Playground", routing: "路由监控", billing: "账单", docs: "文档", login: "登录", start: "开始使用", dashboard: "控制台" },
+    hero: {
+      kicker: "统一 AI 模型网关",
+      title: "一个 API，所有模型，",
+      titleHighlight: "智能路由。",
+      subtitle: "通过单一 OpenAI 兼容端点访问 100+ 大语言模型。按延迟、成本或质量智能路由请求，按量付费。",
+      copy: "复制",
+      copied: "已复制",
+      cta1: "免费开始构建",
+      cta2: "查看文档",
+      metric1Label: "在线模型",
+      metric2Label: "可用性 SLA",
+      metric3Label: "平均额外延迟",
+    },
+    features: {
+      kicker: "为什么选择 TOKEN ROUTER",
+      title: "随业务规模扩展的基础设施",
+      subtitle: "从原型到生产，一个网关解决模型接入、故障转移、成本控制和可观测性。",
+      cards: [
+        { title: "OpenAI 兼容 API", desc: "即插即用。更换 Base URL 即可，保持现有 SDK。支持 Python、Node.js、Go、Rust 及任何 HTTP 客户端。" },
+        { title: "智能路由引擎", desc: "按延迟、成本、质量或自定义权重路由。熔断器在数秒内自动恢复故障供应商。" },
+        { title: "统一计费", desc: "跨所有供应商一张账单。按 Token 成本追踪、预算告警、团队级消费管控、详细流水。" },
+        { title: "多供应商故障转移", desc: "OpenAI 宕机时，流量自动切换到 Azure 或国内替代方案。用户零感知。" },
+        { title: "实时可观测性", desc: "实时仪表板展示请求量、延迟分位数、供应商健康状态和熔断器状态。" },
+        { title: "企业级安全", desc: "API Key 管理、速率限制、余额预检、审计日志和基于角色的访问控制。" },
+      ],
+    },
+    code: {
+      kicker: "快速集成",
+      title: "三行代码完成切换",
+      subtitle: "保持现有 OpenAI SDK 不变，只需更换 Base URL 和 API Key。",
+    },
+    models: {
+      kicker: "模型目录",
+      title: "通过一个端点访问顶级模型",
+      subtitle: "GPT-4o、Claude、Gemini、DeepSeek、Qwen 等——全部通过相同接口。每周新增模型。",
+      viewAll: "查看所有模型 →",
+    },
+    routing: {
+      kicker: "路由策略",
+      title: "从调用模型升级为编排智能",
+      cards: [
+        { title: "延迟优先", desc: "为实时应用优先响应速度，超时自动降级。" },
+        { title: "成本优先", desc: "最小化每次请求的花费，自动路由到最经济的可用模型。" },
+        { title: "质量优先", desc: "关键任务使用最高质量模型，批量任务使用高性价比替代。" },
+        { title: "故障恢复", desc: "熔断器模式配合自动健康检查和供应商重新启用。" },
+      ],
+    },
+    pricing: {
+      kicker: "定价方案",
+      title: "简单、透明、按量计费",
+      subtitle: "模型成本零加价。只需支付平台费加上透传的 Token 价格。",
+      cards: [
+        { name: "免费版", price: "$0", period: "", subtitle: "用于探索", features: ["按用量付费", "基础路由", "社区支持", "2 个模型"] },
+        { name: "专业版", price: "$49", period: "/月", subtitle: "适合团队", features: ["优先路由", "预算告警", "团队账单", "全部模型", "邮件支持"] },
+        { name: "规模版", price: "$299", period: "/月", subtitle: "适合生产", features: ["多区域容灾", "自定义路由", "专属支持", "SLA 保障", "审计日志"] },
+        { name: "企业版", price: "定制", period: "", subtitle: "适合组织", features: ["私有部署", "合规审计", "SSO & RBAC", "定制 SLA", "专属工程师"] },
+      ],
+    },
+    cta: {
+      title: "准备好统一你的 AI 基础设施了吗？",
+      subtitle: "5 分钟内开始路由。无需信用卡。",
+      btn1: "创建免费账户",
+      btn2: "联系销售",
+    },
+    footer: {
+      product: "产品",
+      resources: "资源",
+      company: "公司",
+      docs: "文档",
+      status: "系统状态",
+      changelog: "更新日志",
+      about: "关于我们",
+      contact: "联系我们",
+      terms: "服务条款",
+      privacy: "隐私政策",
+      copyright: "© 2024 TokenRouter. 保留所有权利。",
+    },
   },
-];
+};
 
 type ModelRow = {
   id: string;
-  upstream_model: string;
+  upstream_model?: string;
   region: string;
   provider_chain: string[];
   input_price_per_1k: number;
   output_price_per_1k: number;
-  is_active: boolean;
+  is_active?: boolean;
 };
 
 export default function Home() {
   const apiBase = defaultApiBase.replace(/\/$/, "");
+  const [lang, setLang] = useState<Lang>("en");
   const [sessionToken, setSessionToken] = useState("");
   const [copied, setCopied] = useState(false);
   const [availableModels, setAvailableModels] = useState<ModelRow[]>([]);
 
+  const t = i18n[lang];
+
   useEffect(() => {
     void refreshPublicModels();
-    const storedSession = window.localStorage.getItem("token-router-session") ?? "";
+    const storedSession = window.localStorage.getItem("session_token") ?? "";
     if (storedSession) setSessionToken(storedSession);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function refreshPublicModels() {
@@ -75,151 +206,278 @@ export default function Home() {
 
   async function copyEndpoint() {
     try {
-      await navigator.clipboard.writeText(apiBase);
+      await navigator.clipboard.writeText(`${apiBase}/v1`);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch { /* ignore */ }
   }
 
-
   return (
-    <div className="page-shell">
-      <div className="ambient ambient-left" />
-      <div className="ambient ambient-right" />
+    <div className="orx-page-shell">
+      <div className="orx-orb orx-orb-left" />
+      <div className="orx-orb orx-orb-right" />
 
-      <header className="site-nav">
-        <div className="brand-lockup">
-          <span className="brand-mark" />
-          <span className="brand-name">token-router</span>
+      {/* ─── HEADER ─── */}
+      <header className="orx-site-nav">
+        <div className="orx-brand-lockup">
+          <span className="orx-brand-mark" />
+          <span className="orx-brand-name">TokenRouter</span>
         </div>
-        <nav className="nav-links">
-          <a href="#top">首页</a>
-          <a href="/console">控制台</a>
-          <a href="#market">模型广场</a>
-          <a href="#guides">文档</a>
-          <a href="#about">关于</a>
+        <nav className="orx-nav-links">
+          <a href="/models">{t.nav.models}</a>
+          <a href="/pricing">{t.nav.pricing}</a>
+          <a href="/playground">{t.nav.playground}</a>
+          <a href="/routing">{t.nav.routing}</a>
+          <a href="/billing">{t.nav.billing}</a>
+          <a href="/docs">{t.nav.docs}</a>
         </nav>
-        <div className="nav-actions">
-          <a className="nav-ghost" href="/login">
-            登录
-          </a>
-          <a className="nav-primary" href={sessionToken ? "/console" : "/register"}>
-            {sessionToken ? "账户中心" : "注册"}
+        <div className="orx-nav-actions">
+          <button className="orx-lang-toggle" onClick={() => setLang(lang === "en" ? "zh" : "en")} type="button">
+            {lang === "en" ? "中文" : "EN"}
+          </button>
+          <a className="orx-nav-ghost" href="/login">{t.nav.login}</a>
+          <a className="orx-nav-primary" href={sessionToken ? "/console" : "/register"}>
+            {sessionToken ? t.nav.dashboard : t.nav.start}
           </a>
         </div>
       </header>
 
-      <main className="landing-shell" id="top">
-        <section className="hero-layout">
-          <div className="hero-copy">
-            <p className="hero-kicker">专业的</p>
-            <h1 className="hero-title">
-              全平台 <span>AI 接入网关</span>
+      <main className="orx-landing-shell" id="top">
+        {/* ─── HERO ─── */}
+        <section className="orx-hero-layout">
+          <div className="orx-hero-copy">
+            <p className="orx-hero-kicker">{t.hero.kicker}</p>
+            <h1 className="orx-hero-title">
+              {t.hero.title}
+              <span className="orx-hero-highlight">{t.hero.titleHighlight}</span>
             </h1>
-            <p className="hero-subtitle">
-              更好的价格，更好的稳定性，只需要将模型基础地址替换为统一网关，即可同时服务国内与海外用户。
-            </p>
+            <p className="orx-hero-subtitle">{t.hero.subtitle}</p>
 
-            <div className="endpoint-pill">
-              <span className="endpoint-value">{apiBase}</span>
-              <button className="endpoint-copy" onClick={copyEndpoint} type="button">
-                {copied ? "已复制" : "复制"}
+            <div className="orx-endpoint-pill">
+              <code className="orx-endpoint-value">{apiBase}/v1</code>
+              <button className="orx-endpoint-copy" onClick={copyEndpoint} type="button">
+                {copied ? t.hero.copied : t.hero.copy}
               </button>
             </div>
 
-            <div className="hero-actions">
-              <a className="cta-primary" href={sessionToken ? "/console" : "/register"}>
-                {sessionToken ? "进入控制台" : "开始使用"}
+            <div className="orx-hero-actions">
+              <a className="orx-cta-primary" href={sessionToken ? "/console" : "/register"}>
+                {t.hero.cta1}
               </a>
-              <button className="cta-secondary" onClick={refreshPublicModels} type="button">
-                刷新模型
-              </button>
+              <a className="orx-cta-secondary" href="/docs">
+                {t.hero.cta2}
+              </a>
             </div>
 
-            <div className="hero-metrics">
-              <div className="metric-chip">
+            <div className="orx-hero-metrics">
+              <div className="orx-metric-chip">
                 <strong>{availableModels.length || 2}</strong>
-                <span>已激活模型</span>
+                <span>{t.hero.metric1Label}</span>
               </div>
-              <div className="metric-chip">
-                <strong>20</strong>
-                <span>默认 RPM</span>
+              <div className="orx-metric-chip">
+                <strong>99.95%</strong>
+                <span>{t.hero.metric2Label}</span>
+              </div>
+              <div className="orx-metric-chip">
+                <strong>&lt;50ms</strong>
+                <span>{t.hero.metric3Label}</span>
               </div>
             </div>
           </div>
 
-          <div className="hero-stack">
-            <article className="glass-card glass-card-primary">
-              <p className="glass-label">Gateway Status</p>
-              <h2>统一路由 / 统一计费 / 统一风控</h2>
-              <ul>
-                <li>支持模型自动切换与故障回退</li>
-                <li>订单、流水、Key 与价格统一管理</li>
-                <li>适合 CLI、Agent 与 API 平台场景</li>
-              </ul>
+          <div className="orx-hero-stack">
+            <article className="orx-glass-card orx-glass-card-primary">
+              <p className="orx-glass-label">Quick Start</p>
+              <pre className="orx-hero-code">{`curl ${apiBase}/v1/chat/completions \\
+  -H "Authorization: Bearer sk_live_xxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role":"user","content":"Hello"}]
+  }'`}</pre>
             </article>
 
-            <article className="glass-card glass-card-secondary">
-              <p className="glass-label">当前可用模型</p>
-              <div className="model-badges">
-                {availableModels.length === 0 ? (
-                  <span className="model-badge">gpt-4o-mini</span>
-                ) : (
-                  availableModels.slice(0, 4).map((item) => (
-                    <span className="model-badge" key={item.id}>
-                      {item.id}
-                    </span>
-                  ))
-                )}
+            <article className="orx-glass-card orx-glass-card-secondary">
+              <p className="orx-glass-label">Live Models</p>
+              <div className="orx-model-badges">
+                {(availableModels.length > 0 ? availableModels : [{ id: "gpt-4o-mini" }, { id: "deepseek-chat" }] as ModelRow[]).slice(0, 6).map((item) => (
+                  <span className="orx-model-badge" key={item.id}>{item.id}</span>
+                ))}
               </div>
             </article>
           </div>
         </section>
 
-        <section className="guides-shell" id="guides">
-          <div className="section-heading">
-            <p>快速接入指南</p>
-            <h2>从获取额度到接入生产流量，保留统一入口</h2>
+        {/* ─── FEATURES ─── */}
+        <section className="orx-section" id="features">
+          <div className="orx-section-heading">
+            <p>{t.features.kicker}</p>
+            <h2>{t.features.title}</h2>
+            <p className="orx-section-subtitle">{t.features.subtitle}</p>
           </div>
-          <div className="guide-grid">
-            {quickGuides.map((guide) => (
-              <a className="guide-card" href={guide.link} key={guide.title}>
-                <div className="guide-icon">+</div>
-                <h3>{guide.title}</h3>
-                <p>{guide.description}</p>
-                <span>查看教程</span>
-              </a>
+          <div className="orx-features-grid">
+            {t.features.cards.map((card) => (
+              <article className="orx-feature-card" key={card.title}>
+                <h3>{card.title}</h3>
+                <p>{card.desc}</p>
+              </article>
             ))}
           </div>
         </section>
 
-        <section className="market-shell" id="market">
-          <div className="section-heading compact">
-            <p>双边市场</p>
-            <h2>同一个产品，服务两类用户</h2>
+        {/* ─── CODE EXAMPLE ─── */}
+        <section className="orx-section" id="integration">
+          <div className="orx-section-heading">
+            <p>{t.code.kicker}</p>
+            <h2>{t.code.title}</h2>
+            <p className="orx-section-subtitle">{t.code.subtitle}</p>
           </div>
-          <div className="market-grid">
-            {marketHighlights.map((entry) => (
-              <article className="market-card" key={entry.title}>
-                <h3>{entry.title}</h3>
-                <p>{entry.description}</p>
+          <div className="orx-code-showcase">
+            <div className="orx-code-tabs">
+              <span className="active">Python</span>
+              <span>Node.js</span>
+              <span>cURL</span>
+            </div>
+            <pre className="orx-code-block">{`from openai import OpenAI
+
+client = OpenAI(
+    base_url="${apiBase}/v1",
+    api_key="sk_live_your_key_here"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello!"}],
+    extra_body={"route": "latency"}  # optional routing strategy
+)
+
+print(response.choices[0].message.content)`}</pre>
+          </div>
+        </section>
+
+        {/* ─── ROUTING ─── */}
+        <section className="orx-section" id="routing-section">
+          <div className="orx-section-heading">
+            <p>{t.routing.kicker}</p>
+            <h2>{t.routing.title}</h2>
+          </div>
+          <div className="orx-route-grid">
+            {t.routing.cards.map((card) => (
+              <article className="orx-route-card" key={card.title}>
+                <h3>{card.title}</h3>
+                <p>{card.desc}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* ─── MODELS TABLE ─── */}
+        <section className="orx-section" id="models-section">
+          <div className="orx-section-heading">
+            <p>{t.models.kicker}</p>
+            <h2>{t.models.title}</h2>
+            <p className="orx-section-subtitle">{t.models.subtitle}</p>
+          </div>
+          <div className="orx-model-table-wrap">
+            <table className="orx-model-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Provider</th>
+                  <th>Input</th>
+                  <th>Output</th>
+                  <th>Region</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(availableModels.length > 0 ? availableModels : [
+                  { id: "gpt-4o-mini", provider_chain: ["openai"], input_price_per_1k: 0.001, output_price_per_1k: 0.002, region: "global" },
+                  { id: "deepseek-chat", provider_chain: ["domestic"], input_price_per_1k: 0.0004, output_price_per_1k: 0.0008, region: "cn" },
+                ] as ModelRow[]).map((m) => (
+                  <tr key={m.id}>
+                    <td><code>{m.id}</code></td>
+                    <td>{m.provider_chain?.[0] || "-"}</td>
+                    <td>${m.input_price_per_1k}/1K</td>
+                    <td>${m.output_price_per_1k}/1K</td>
+                    <td><span className="orx-region-badge">{m.region}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="orx-model-table-footer">
+              <a href="/models">{t.models.viewAll}</a>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── PRICING ─── */}
+        <section className="orx-section" id="pricing-section">
+          <div className="orx-section-heading">
+            <p>{t.pricing.kicker}</p>
+            <h2>{t.pricing.title}</h2>
+            <p className="orx-section-subtitle">{t.pricing.subtitle}</p>
+          </div>
+          <div className="orx-pricing-grid">
+            {t.pricing.cards.map((card) => (
+              <article className="orx-price-card" key={card.name}>
+                <p className="orx-price-tier">{card.name}</p>
+                <h3>{card.price}<span className="orx-price-period">{card.period}</span></h3>
+                <p className="orx-price-subtitle">{card.subtitle}</p>
                 <ul>
-                  {entry.points.map((point) => (
-                    <li key={point}>{point}</li>
-                  ))}
+                  {card.features.map((f) => <li key={f}>{f}</li>)}
                 </ul>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="about-shell" id="about">
-          <div className="section-heading compact">
-            <p>关于平台</p>
-            <h2>目标不是另一个简单转发器，而是可运营的 AI 网关底座</h2>
+        {/* ─── CTA ─── */}
+        <section className="orx-section orx-cta-section" id="start">
+          <h2>{t.cta.title}</h2>
+          <p>{t.cta.subtitle}</p>
+          <div className="orx-hero-actions">
+            <a className="orx-cta-primary" href={sessionToken ? "/console" : "/register"}>
+              {t.cta.btn1}
+            </a>
+            <a className="orx-cta-secondary" href="/docs">
+              {t.cta.btn2}
+            </a>
           </div>
         </section>
       </main>
+
+      {/* ─── FOOTER ─── */}
+      <footer className="orx-footer">
+        <div className="orx-footer-grid">
+          <div className="orx-footer-brand">
+            <span className="orx-brand-name">TokenRouter</span>
+            <p>{lang === "en" ? "Unified AI Model Gateway" : "统一 AI 模型网关"}</p>
+          </div>
+          <div className="orx-footer-col">
+            <h4>{t.footer.product}</h4>
+            <a href="/models">{t.nav.models}</a>
+            <a href="/pricing">{t.nav.pricing}</a>
+            <a href="/playground">{t.nav.playground}</a>
+            <a href="/routing">{t.nav.routing}</a>
+          </div>
+          <div className="orx-footer-col">
+            <h4>{t.footer.resources}</h4>
+            <a href="/docs">{t.footer.docs}</a>
+            <a href="/routing">{t.footer.status}</a>
+            <a href="/docs">{t.footer.changelog}</a>
+          </div>
+          <div className="orx-footer-col">
+            <h4>{t.footer.company}</h4>
+            <a href="#">{t.footer.about}</a>
+            <a href="#">{t.footer.contact}</a>
+            <a href="#">{t.footer.terms}</a>
+          </div>
+        </div>
+        <div className="orx-footer-bottom">
+          <p>{t.footer.copyright}</p>
+        </div>
+      </footer>
     </div>
   );
 }
+

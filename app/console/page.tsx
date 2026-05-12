@@ -24,6 +24,10 @@ type RechargeOrderRow = { id: number; amount: number; channel: string; status: s
 type LedgerRow = { entry_type: string; amount: number; balance_after: number; reference_type?: string | null; reference_id?: number | null; created_at: number };
 type ModelRow = { id: string; upstream_model: string; region: string; provider_chain: string[]; input_price_per_1k: number; output_price_per_1k: number; is_active: boolean };
 
+type AnalyticsDaily = { day: string; requests: number; prompt_tokens: number; completion_tokens: number; total_tokens: number; cost: number };
+type AnalyticsByModel = { model: string; requests: number; total_tokens: number; cost: number };
+type AnalyticsResponse = { days: number; daily: AnalyticsDaily[]; by_model: AnalyticsByModel[]; totals: { requests: number; tokens: number; cost: number } };
+
 type NavSection = "dashboard" | "keys" | "usage" | "billing" | "orders" | "models" | "settings";
 type NavGroup = {
   title: string;
@@ -73,6 +77,7 @@ export default function ConsolePage() {
   const [adminOrderRows, setAdminOrderRows] = useState<RechargeOrderRow[]>([]);
   const [availableModels, setAvailableModels] = useState<ModelRow[]>([]);
   const [adminModels, setAdminModels] = useState<ModelRow[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState("");
@@ -120,13 +125,14 @@ export default function ConsolePage() {
     if (!Object.keys(h).length) return;
     setBusy(true);
     try {
-      const [meR, usageR, orderR, ledgerR, keysR, modelsR] = await Promise.all([
+      const [meR, usageR, orderR, ledgerR, keysR, modelsR, analyticsR] = await Promise.all([
         fetch(`${apiBase}/api/v1/me`, { headers: h }),
         fetch(`${apiBase}/api/v1/usage`, { headers: h }),
         fetch(`${apiBase}/api/v1/orders`, { headers: h }),
         fetch(`${apiBase}/api/v1/billing/ledger`, { headers: h }),
         fetch(`${apiBase}/api/v1/keys`, { headers: h }),
         fetch(`${apiBase}/api/v1/models`),
+        fetch(`${apiBase}/api/v1/usage/analytics?days=14`, { headers: h }),
       ]);
       const meD = await meR.json() as MeResponse & { detail?: string };
       if (!meR.ok) { msg(meD.detail ?? "会话已过期"); window.location.href = "/login"; return; }
@@ -136,6 +142,7 @@ export default function ConsolePage() {
       const ldD = await ledgerR.json() as { data?: LedgerRow[] }; setLedgerRows(ldD.data ?? []);
       const kyD = await keysR.json() as KeyListResponse; setKeyRows(kyD.data ?? []); setActiveKeyId(kyD.active_key_id ?? null);
       const mdD = await modelsR.json() as { data?: ModelRow[] }; setAvailableModels(mdD.data ?? []);
+      if (analyticsR.ok) { const anD = await analyticsR.json() as AnalyticsResponse; setAnalytics(anD); }
     } catch { msg("加载失败，请刷新重试"); }
     finally { setBusy(false); }
   }
@@ -504,41 +511,74 @@ export default function ConsolePage() {
               <div className="dash-insight-grid">
                 <div className="dash-section-card">
                   <div className="dash-card-head">
-                    <p className="dash-card-title">最近 7 天请求趋势</p>
-                    <span className="text-muted">模拟看板</span>
+                    <p className="dash-card-title">最近 14 天用量趋势</p>
+                    <span className="text-muted">{analytics ? `${analytics.totals.requests} 次请求` : "加载中..."}</span>
                   </div>
-                  <div className="lucky-chart" aria-label="最近七天请求图表">
-                    <div className="lucky-grid" />
-                    <div className="lucky-line-wrap">
-                      {dailyEstimate.map((value, idx) => (
-                        <div key={idx} className="lucky-point-wrap" style={{ left: `${(idx / (dailyEstimate.length - 1)) * 100}%`, bottom: `${value * 1.45}px` }}>
-                          <span className="lucky-point" />
-                        </div>
-                      ))}
+                  {analytics && analytics.daily.length > 0 ? (
+                    <div className="analytics-chart">
+                      <div className="analytics-bars">
+                        {(() => {
+                          const maxReq = Math.max(...analytics.daily.map(d => d.requests), 1);
+                          return analytics.daily.map((d, i) => (
+                            <div key={i} className="analytics-bar-col">
+                              <div className="analytics-bar-tooltip">
+                                <strong>{d.day}</strong><br />
+                                {d.requests} 请求 · ${d.cost.toFixed(4)}
+                              </div>
+                              <div
+                                className="analytics-bar"
+                                style={{ height: `${Math.max(4, (d.requests / maxReq) * 120)}px` }}
+                              />
+                              <span className="analytics-bar-label">{d.day.slice(5)}</span>
+                            </div>
+                          ));
+                        })()}
+                      </div>
                     </div>
-                    <div className="lucky-bars">
-                      {dailyEstimate.map((value, idx) => (
-                        <div key={idx} className="mini-bar-wrap">
-                          <div className="mini-bar" style={{ height: `${value * 1.7}px` }} />
-                          <span className="mini-bar-label">D{idx + 1}</span>
-                        </div>
-                      ))}
+                  ) : (
+                    <div className="lucky-chart" aria-label="最近请求图表">
+                      <div className="lucky-grid" />
+                      <div className="lucky-bars">
+                        {dailyEstimate.map((value, idx) => (
+                          <div key={idx} className="mini-bar-wrap">
+                            <div className="mini-bar" style={{ height: `${value * 1.7}px` }} />
+                            <span className="mini-bar-label">D{idx + 1}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="dash-section-card">
-                  <p className="dash-card-title">系统公告</p>
+                  <p className="dash-card-title">模型用量分布</p>
+                  {analytics && analytics.by_model.length > 0 ? (
+                    <div className="analytics-model-list">
+                      {(() => {
+                        const maxCost = Math.max(...analytics.by_model.map(m => m.cost), 0.001);
+                        return analytics.by_model.map((m, i) => (
+                          <div key={i} className="analytics-model-row">
+                            <div className="analytics-model-header">
+                              <span className="model-tag">{m.model}</span>
+                              <span className="text-muted">{m.requests} 次 · ${m.cost.toFixed(4)}</span>
+                            </div>
+                            <div className="analytics-model-bar-bg">
+                              <div className="analytics-model-bar-fill" style={{ width: `${(m.cost / maxCost) * 100}%` }} />
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  ) : (
+                    <ul className="bullet-list">
+                      <li>暂无模型用量数据，调用 API 后可查看分布。</li>
+                    </ul>
+                  )}
+                  <p className="dash-card-title" style={{ marginTop: 14 }}>系统公告</p>
                   <ul className="bullet-list">
-                    <li>新增 session 登录态管理，支持控制台独立权限。</li>
-                    <li>模型路由支持上游故障自动切换，降低失败率。</li>
+                    <li>新增 Playground 在线测试页面，选择模型即可体验 AI 对话。</li>
+                    <li>API 现已支持 SSE 流式输出和 Function Calling。</li>
                     <li>管理员可在“风控配置”统一调整 RPM 与日限额。</li>
-                  </ul>
-                  <p className="dash-card-title" style={{ marginTop: 14 }}>FAQ</p>
-                  <ul className="bullet-list">
-                    <li>看不到数据：点击右上角“刷新”，确认后端 `localhost:8000` 可用。</li>
-                    <li>登录后跳回登录页：清理浏览器 localStorage 后重试。</li>
-                    <li>充值单一直 pending：请管理员到“充值订单”执行审核入账。</li>
                   </ul>
                 </div>
               </div>
